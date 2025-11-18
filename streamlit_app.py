@@ -24,14 +24,13 @@ st.markdown("""
 # =============================== #
 #  CONSTANT – DEFAULT GOOGLE SHEETS URL
 # =============================== #
-# You can change this URL to any other Google Sheets document you want
 DEFAULT_GSHEETS_URL = (
     "https://docs.google.com/spreadsheets/d/"
     "10vq7PsjVoonwVnjqM0o161n5ybslQAuV8xe0dwDoKbw/edit?gid=11827755#gid=11827755"
 )
 
 # =============================== #
-#  HELPER – EXTRACT SHEET ID FROM URL
+#  HELPER – EXTRACT SPREADSHEET ID FROM URL
 # =============================== #
 def extract_spreadsheet_id(url: str) -> str:
     """
@@ -228,12 +227,19 @@ with st.sidebar:
 # =============================== #
 #  DISPLAY DATAFRAME
 # =============================== #
-st.subheader("Data Preview")
-st.dataframe(filtered[show_cols], use_container_width=True)
+if sheet_name == "risk_customers":
+    # Show the full filtered table for risk_customers
+    st.subheader("Data Preview (full table)")
+    st.dataframe(filtered, use_container_width=True)
+else:
+    # Keep the original behavior for predicted
+    st.subheader("Data Preview")
+    st.dataframe(filtered[show_cols], use_container_width=True)
 
 # =============================== #
 #  DOWNLOAD FILTERED DATA
 # =============================== #
+# For simplicity, still use show_cols for the download (all columns by default)
 csv_out = filtered[show_cols].to_csv(index=False).encode("utf-8")
 st.download_button(
     "⬇️ Download filtered CSV",
@@ -243,89 +249,153 @@ st.download_button(
 )
 
 # =============================== #
-#  INTERACTIVE CHART
+#  CHARTS SECTION
 # =============================== #
-st.subheader("Interactive Chart")
 
-if not filtered.empty:
+if sheet_name == "predicted":
+    # ------------------------------------------- #
+    # ORIGINAL INTERACTIVE CHART FOR 'predicted'
+    # ------------------------------------------- #
+    st.subheader("Interactive Chart")
 
-    # Identify numeric and non-numeric columns
-    num_cols = [c for c in filtered.columns if pd.api.types.is_numeric_dtype(filtered[c])]
-    cat_cols = [c for c in filtered.columns if not pd.api.types.is_numeric_dtype(filtered[c])]
+    if not filtered.empty:
 
-    # Chart configuration controls
-    col1, col2, col3, col4 = st.columns(4)
+        # Identify numeric and non-numeric columns
+        num_cols = [c for c in filtered.columns if pd.api.types.is_numeric_dtype(filtered[c])]
+        cat_cols = [c for c in filtered.columns if not pd.api.types.is_numeric_dtype(filtered[c])]
 
-    with col1:
-        chart_type = st.selectbox("Chart Type", ["Bar", "Line", "Scatter"])
-    with col2:
-        x_col = st.selectbox("X Axis (category/date)", cat_cols or filtered.columns.tolist())
-    with col3:
-        y_col = st.selectbox("Y Axis (numeric)", num_cols or filtered.columns.tolist())
-    with col4:
-        agg = st.selectbox("Aggregation", ["sum", "mean", "count", "min", "max"], index=0)
+        # Chart configuration controls
+        col1, col2, col3, col4 = st.columns(4)
 
-    # Prepare dataframe for plotting
-    plot_df = filtered.copy()
+        with col1:
+            chart_type = st.selectbox("Chart Type", ["Bar", "Line", "Scatter"])
+        with col2:
+            x_col = st.selectbox("X Axis (category/date)", cat_cols or filtered.columns.tolist())
+        with col3:
+            y_col = st.selectbox("Y Axis (numeric)", num_cols or filtered.columns.tolist())
+        with col4:
+            agg = st.selectbox("Aggregation", ["sum", "mean", "count", "min", "max"], index=0)
 
-    # For Bar and Line charts, aggregate by X
-    if chart_type in ["Bar", "Line"] and len(plot_df):
+        # Prepare dataframe for plotting
+        plot_df = filtered.copy()
 
-        if agg == "count":
-            plot_df = (
-                plot_df.groupby(x_col, dropna=False)[y_col]
-                .count()
-                .reset_index(name=y_col)
+        # For Bar and Line charts, aggregate by X
+        if chart_type in ["Bar", "Line"] and len(plot_df):
+
+            if agg == "count":
+                plot_df = (
+                    plot_df.groupby(x_col, dropna=False)[y_col]
+                    .count()
+                    .reset_index(name=y_col)
+                )
+            else:
+                plot_df = getattr(
+                    plot_df.groupby(x_col, dropna=False)[y_col],
+                    agg
+                )().reset_index()
+
+        # Altair configuration
+        alt.data_transformers.disable_max_rows()
+
+        # Bar chart
+        if chart_type == "Bar":
+            chart = (
+                alt.Chart(plot_df)
+                .mark_bar()
+                .encode(
+                    x=alt.X(x_col, sort="-y"),
+                    y=alt.Y(y_col),
+                    tooltip=[x_col, y_col]
+                )
+                .interactive()
             )
+
+        # Line chart
+        elif chart_type == "Line":
+            chart = (
+                alt.Chart(plot_df)
+                .mark_line(point=True)
+                .encode(
+                    x=alt.X(x_col),
+                    y=alt.Y(y_col),
+                    tooltip=[x_col, y_col]
+                )
+                .interactive()
+            )
+
+        # Scatter chart – uses non-aggregated filtered data
         else:
-            plot_df = getattr(
-                plot_df.groupby(x_col, dropna=False)[y_col],
-                agg
-            )().reset_index()
-
-    # Altair configuration
-    alt.data_transformers.disable_max_rows()
-
-    # Bar chart
-    if chart_type == "Bar":
-        chart = (
-            alt.Chart(plot_df)
-            .mark_bar()
-            .encode(
-                x=alt.X(x_col, sort="-y"),
-                y=alt.Y(y_col),
-                tooltip=[x_col, y_col]
+            chart = (
+                alt.Chart(filtered)
+                .mark_circle(size=60)
+                .encode(
+                    x=alt.X(x_col),
+                    y=alt.Y(y_col),
+                    tooltip=list(filtered.columns)
+                )
+                .interactive()
             )
-            .interactive()
-        )
 
-    # Line chart
-    elif chart_type == "Line":
-        chart = (
-            alt.Chart(plot_df)
-            .mark_line(point=True)
-            .encode(
-                x=alt.X(x_col),
-                y=alt.Y(y_col),
-                tooltip=[x_col, y_col]
-            )
-            .interactive()
-        )
+        st.altair_chart(chart, use_container_width=True)
 
-    # Scatter chart – uses non-aggregated filtered data
     else:
-        chart = (
-            alt.Chart(filtered)
-            .mark_circle(size=60)
-            .encode(
-                x=alt.X(x_col),
-                y=alt.Y(y_col),
-                tooltip=list(filtered.columns)
-            )
-            .interactive()
-        )
-
-    st.altair_chart(chart, use_container_width=True)
+        st.info("No data available to plot.")
 
 else:
-    st.info("No data available to plot.")
+    # ------------------------------------------- #
+    # SPECIAL CHART FOR 'risk_customers'
+    # ------------------------------------------- #
+    st.subheader("Risk Customers Charts")
+
+    if filtered.empty:
+        st.info("No data available to plot for 'risk_customers'.")
+    else:
+        # We only need CustomerIndex for the count chart
+        required_cols = ["CustomerIndex"]
+
+        missing = [c for c in required_cols if c not in filtered.columns]
+        if missing:
+            st.warning(
+                "The 'risk_customers' sheet needs the following column to build the chart: "
+                + ", ".join(missing)
+            )
+        else:
+            # X-axis options: all columns except CustomerIndex and Churn_Probability
+            excluded = ["CustomerIndex", "Churn_Probability"]
+            available_x_cols = [c for c in filtered.columns if c not in excluded]
+
+            if not available_x_cols:
+                st.warning(
+                    "There are no available columns to use as X axis "
+                    "once 'CustomerIndex' and 'Churn_Probability' are excluded."
+                )
+            else:
+                x_axis_col = st.selectbox(
+                    "Select X-axis column",
+                    available_x_cols
+                )
+
+                # Group data by the chosen X dimension and count CustomerIndex
+                grouped = (
+                    filtered
+                    .groupby(x_axis_col, dropna=False)["CustomerIndex"]
+                    .count()
+                    .reset_index(name="CustomerIndex_count")
+                )
+
+                alt.data_transformers.disable_max_rows()
+
+                st.markdown("### Count of CustomerIndex by selected X")
+
+                chart_count = (
+                    alt.Chart(grouped)
+                    .mark_bar()
+                    .encode(
+                        x=alt.X(x_axis_col, sort="-y", title=x_axis_col),
+                        y=alt.Y("CustomerIndex_count:Q", title="CustomerIndex count"),
+                        tooltip=[x_axis_col, "CustomerIndex_count:Q"]
+                    )
+                    .interactive()
+                )
+
+                st.altair_chart(chart_count, use_container_width=True)
