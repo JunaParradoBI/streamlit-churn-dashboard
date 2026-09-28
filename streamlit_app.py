@@ -191,8 +191,8 @@ with c1:
         alt.Chart(rc)
         .mark_bar(cornerRadiusEnd=4, height=22)
         .encode(
-            y=alt.Y("Reason:N", sort="-x", title=None, axis=alt.Axis(labelLimit=220)),
-            x=alt.X("Customers:Q", title="Customers"),
+            y=alt.Y("Reason:N", sort="-x", title=None, axis=alt.Axis(labelLimit=320, labelPadding=8)),
+            x=alt.X("Customers:Q", title="Customers", scale=alt.Scale(domain=[0, int(rc["Customers"].max() * 1.18) + 1])),
             color=alt.condition("datum.Top", alt.value(ACCENT), alt.value(NEUTRAL)),
             tooltip=["Reason", "Customers"],
         )
