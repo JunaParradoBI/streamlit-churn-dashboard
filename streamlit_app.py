@@ -4,398 +4,299 @@ import pandas as pd
 import altair as alt
 
 # =============================== #
-#  BASIC PAGE CONFIGURATION
+#  PAGE CONFIGURATION
 # =============================== #
 st.set_page_config(
-    page_title="Dataset Loader & Filters from Google Sheets",
-    page_icon="📊",
-    layout="wide"
+    page_title="Churn Early-Warning · Juan Parrado",
+    page_icon="📉",
+    layout="wide",
 )
 
-st.title("📊 Load Data from Google Sheets and Apply Filters")
+ACCENT = "#3A50FC"
+ACCENT_SOFT = "#E8EBFF"
+INK = "#0F1117"
+MUTED = "#5A6072"
+NEUTRAL = "#C9CFE0"
+RISK_THRESHOLD = 0.70
 
-st.markdown("""
-**Steps:**  
-1) Enter your Google Sheets URL.  
-2) Select which sheet/tab to load (`predicted` or `risk_customers`).  
-3) Apply filters, explore the data, and download the filtered result.
-""")
+# Brand styling (matches juanparrado.com)
+st.markdown(
+    """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600&display=swap');
+    html, body, [class*="css"], .stMarkdown, p, li, label, .stTextInput, .stSelectbox { font-family: 'Figtree', sans-serif; }
+    h1, h2, h3, .hero-title { font-family: 'Bricolage Grotesque', sans-serif !important; letter-spacing: -0.02em; }
+    .block-container { padding-top: 2rem; max-width: 1240px; }
+    .strip { font-size: 13px; color: #5A6072; background: #F4F5F9; border-radius: 999px; padding: 6px 14px; display: inline-block; margin-bottom: 18px; }
+    .strip b { color: #0F1117; }
+    .hero-title { font-size: clamp(32px, 4.2vw, 52px) !important; font-weight: 700; line-height: 1.05 !important; color: #0F1117; margin: 0 0 14px; }
+    .hero-title span { color: #3A50FC; }
+    .lede { font-size: 18px; color: #5A6072; max-width: 62ch; margin-bottom: 26px; }
+    .kpi { background: #F4F5F9; border-radius: 20px; padding: 20px 22px; height: 100%; }
+    .kpi .v { font-family: 'Bricolage Grotesque', sans-serif; font-size: 40px; font-weight: 700; color: #2438D6; line-height: 1; letter-spacing: -0.03em; }
+    .kpi .l { font-size: 14px; color: #5A6072; margin-top: 8px; line-height: 1.4; }
+    .plain, .plain * { font-family: 'Figtree', sans-serif !important; }
+    .plain { border-left: 3px solid #3A50FC; padding: 4px 0 4px 16px; margin: 26px 0 8px; font-size: 17px; color: #0F1117; max-width: 80ch; }
+    .plain .k { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #2438D6; display: block; margin-bottom: 4px; }
+    .card-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
+    .card-top .p { font-family: 'Bricolage Grotesque', sans-serif; font-size: 28px; font-weight: 700; color: #2438D6; }
+    .card-top .id { font-weight: 600; color: #0F1117; }
+    .card-top .meta { color: #5A6072; font-size: 14px; }
+    .tag { display: inline-block; font-size: 12px; font-weight: 600; background: #E8EBFF; color: #2438D6; border-radius: 999px; padding: 3px 10px; }
+    .why, .act { font-size: 15px; margin-top: 8px; }
+    .why b, .act b { font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: #5A6072; display: block; }
+    .act { background: #F4F5F9; border-radius: 12px; padding: 10px 12px; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 # =============================== #
-#  CONSTANT – DEFAULT GOOGLE SHEETS URL
+#  DATA SOURCES
 # =============================== #
 DEFAULT_GSHEETS_URL = (
     "https://docs.google.com/spreadsheets/d/"
     "10vq7PsjVoonwVnjqM0o161n5ybslQAuV8xe0dwDoKbw/edit?gid=11827755#gid=11827755"
 )
+# Public IBM Telco dataset the model was trained on (adds monthly bill, contract and tenure)
+TELCO_URL = "https://raw.githubusercontent.com/IBM/telco-customer-churn-on-icp4d/master/data/Telco-Customer-Churn.csv"
 
-# =============================== #
-#  HELPER – EXTRACT SPREADSHEET ID FROM URL
-# =============================== #
+
 def extract_spreadsheet_id(url: str) -> str:
-    """
-    Extracts the Google Sheets spreadsheet ID from a full URL.
-
-    Example:
-      https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit#gid=0
-      -> returns "SPREADSHEET_ID"
-    """
+    """Extracts the Google Sheets spreadsheet ID from a full URL."""
     match = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", url)
     if not match:
         raise ValueError("Could not extract spreadsheet ID from URL. Check the format.")
     return match.group(1)
 
-# =============================== #
-#  SIDEBAR – GOOGLE SHEETS CONFIG
-# =============================== #
-with st.sidebar:
-    st.header("1) Google Sheets Settings")
 
-    # Text input so you can change the sheet URL if needed
-    gsheets_url = st.text_input(
-        "Google Sheets URL",
-        value=DEFAULT_GSHEETS_URL,
-        help="https://docs.google.com/spreadsheets/d/10vq7PsjVoonwVnjqM0o161n5ybslQAuV8xe0dwDoKbw/edit?usp=sharing"
-    )
-
-    st.caption(
-        "Make sure the Google Sheet is shared as "
-        "**'Anyone with the link – Viewer'** so the app can read it."
-    )
-
-    # Choose which tab (sheet) to load
-    sheet_name = st.selectbox(
-        "Select sheet/tab",
-        ["predicted", "risk_customers"],
-        index=0
-    )
-
-# If no URL provided, stop the app
-if not gsheets_url.strip():
-    st.info("⬅️ Please paste a valid Google Sheets URL in the sidebar to begin.")
-    st.stop()
-
-# =============================== #
-#  LOAD DATA FROM GOOGLE SHEETS
-# =============================== #
-@st.cache_data(show_spinner=True)
+@st.cache_data(show_spinner=False, ttl=3600)
 def load_data_from_gsheets(url: str, sheet: str) -> pd.DataFrame:
-    """
-    Loads data from a specific sheet (tab) of a Google Sheets document
-    using the public CSV export endpoint.
-
-    - url: full Google Sheets URL
-    - sheet: sheet/tab name (e.g. 'predicted', 'risk_customers')
-    """
+    """Loads one tab of a public Google Sheet through the CSV export endpoint."""
     spreadsheet_id = extract_spreadsheet_id(url)
+    csv_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/gviz/tq?tqx=out:csv&sheet={sheet}"
+    # The sheet uses comma decimals (e.g. 0,85)
+    return pd.read_csv(csv_url, decimal=",")
 
-    # Google Sheets CSV export endpoint:
-    # https://docs.google.com/spreadsheets/d/<ID>/gviz/tq?tqx=out:csv&sheet=<SHEET_NAME>
-    csv_url = (
-        f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/gviz/tq?"
-        f"tqx=out:csv&sheet={sheet}"
+
+@st.cache_data(show_spinner=False, ttl=86400)
+def load_telco() -> pd.DataFrame | None:
+    try:
+        return pd.read_csv(TELCO_URL)
+    except Exception:
+        return None
+
+
+# Main determinants are free text written by the AI; group spelling variants into a few reasons
+def reason_group(text: str) -> str:
+    t = str(text).lower()
+    if "contract" in t:
+        return "No long-term contract"
+    if "charge" in t or "price" in t or "cost" in t:
+        return "High monthly bill"
+    if "tenure" in t:
+        return "New customer (short tenure)"
+    if "payment" in t:
+        return "Payment method"
+    if "support" in t:
+        return "Tech support issues"
+    return "Other"
+
+
+with st.spinner("Loading the latest model results…"):
+    try:
+        predicted = load_data_from_gsheets(DEFAULT_GSHEETS_URL, "predicted")
+        risk = load_data_from_gsheets(DEFAULT_GSHEETS_URL, "risk_customers")
+    except Exception as e:
+        st.error(f"Couldn't load the model results from Google Sheets: {e}")
+        st.stop()
+    telco = load_telco()
+
+risk = risk.copy()
+risk["Reason"] = risk["MainDeterminant"].map(reason_group)
+if telco is not None:
+    risk = risk.merge(
+        telco[["tenure", "Contract", "MonthlyCharges"]], left_on="CustomerIndex", right_index=True, how="left"
     )
 
-    df = pd.read_csv(csv_url)
-    return df
+# Model quality on the test customers
+def scores(pred_col: str) -> dict:
+    y, yh = predicted["churn_actual"], predicted[pred_col]
+    tp = int(((y == 1) & (yh == 1)).sum())
+    fp = int(((y == 0) & (yh == 1)).sum())
+    fn = int(((y == 1) & (yh == 0)).sum())
+    return {
+        "Accuracy": (y == yh).mean(),
+        "Precision (flagged who really left)": tp / (tp + fp) if tp + fp else 0,
+        "Recall (leavers the model caught)": tp / (tp + fn) if tp + fn else 0,
+    }
 
-# Try to load the selected sheet
-try:
-    df = load_data_from_gsheets(gsheets_url, sheet_name)
-except Exception as e:
-    st.error(f"Error loading data from Google Sheets: {e}")
-    st.stop()
-
-# Stop if dataframe is empty
-if df.empty:
-    st.warning("The sheet was loaded, but it is empty or has no rows.")
-    st.stop()
-
-# =============================== #
-#  SIDEBAR – DATE PARSING OPTION
-# =============================== #
-with st.sidebar:
-    st.header("2) Options")
-
-    # Option to automatically detect and convert date-like columns
-    try_dates = st.checkbox("Try to detect date columns", value=True)
-
-    if try_dates:
-        for col in df.columns:
-            if df[col].dtype == "object":  # Only convert text columns
-                try:
-                    parsed = pd.to_datetime(df[col], errors="raise", infer_datetime_format=True)
-                    # Accept conversion only if at least 80% parse successfully
-                    if parsed.notna().mean() > 0.8:
-                        df[col] = parsed
-                except Exception:
-                    # Ignore columns that cannot be safely converted
-                    pass
+models = {"Logistic Regression": "logistic_pred", "Random Forest": "random_forest_pred", "XGBoost": "xgboost_pred"}
+model_scores = {name: scores(col) for name, col in models.items()}
+best_acc = max(s["Accuracy"] for s in model_scores.values())
+flagged_really_left = predicted.set_index("customerID").reindex(risk["CustomerIndex"])["churn_actual"].mean()
+n_risk = len(risk)
+revenue_at_risk = risk["MonthlyCharges"].sum() if "MonthlyCharges" in risk else None
 
 # =============================== #
-#  SIDEBAR – FILTER SELECTION
+#  HERO
 # =============================== #
-with st.sidebar:
-    st.header("3) Filters")
-
-    # Choose which columns will have filters
-    cols_to_filter = st.multiselect(
-        "Choose columns to filter",
-        df.columns.tolist()
-    )
-
-# =============================== #
-#  BUILD FILTER WIDGETS DYNAMICALLY
-# =============================== #
-filters = {}
-
-for col in cols_to_filter:
-    series = df[col]
-    container = st.sidebar.container()
-
-    with container:
-        # Numeric columns → range slider
-        if pd.api.types.is_numeric_dtype(series):
-            min_v, max_v = float(series.min()), float(series.max())
-            sel = st.slider(f"{col} (range)", min_v, max_v, (min_v, max_v))
-            filters[col] = ("numeric_range", sel)
-
-        # Datetime columns → date range selector
-        elif pd.api.types.is_datetime64_any_dtype(series):
-            min_d = pd.to_datetime(series.min()).date()
-            max_d = pd.to_datetime(series.max()).date()
-            sel = st.date_input(f"{col} (date range)", (min_d, max_d))
-
-            if isinstance(sel, tuple) and len(sel) == 2:
-                filters[col] = ("date_range", sel)
-
-        # Other types (categorical/text) → multiselect of unique values
-        else:
-            uniq = sorted(series.dropna().astype(str).unique().tolist())
-
-            # Avoid extremely large dropdowns
-            if len(uniq) > 500:
-                st.caption(f"{col}: too many unique values ({len(uniq)}). Showing first 500.")
-                uniq = uniq[:500]
-
-            sel = st.multiselect(col, uniq)
-            filters[col] = ("isin", sel)
-
-# =============================== #
-#  APPLY FILTERS
-# =============================== #
-filtered = df.copy()
-
-for col, (kind, val) in filters.items():
-
-    if kind == "numeric_range":
-        lo, hi = val
-        filtered = filtered[(filtered[col] >= lo) & (filtered[col] <= hi)]
-
-    elif kind == "date_range":
-        start, end = val
-        start, end = pd.to_datetime(start), pd.to_datetime(end)
-        filtered = filtered[
-            (pd.to_datetime(filtered[col]) >= start)
-            & (pd.to_datetime(filtered[col]) <= end)
-        ]
-
-    elif kind == "isin":
-        if val:
-            str_vals = [str(x) for x in val]
-            filtered = filtered[filtered[col].astype(str).isin(str_vals)]
-
-# =============================== #
-#  SUMMARY MESSAGE
-# =============================== #
-st.success(
-    f"Active sheet: **{sheet_name}** · "
-    f"Rows after filters: {len(filtered):,} / {len(df):,} · "
-    f"Columns: {len(df.columns)}"
+st.markdown(
+    '<span class="strip"><b>Portfolio project</b> · public IBM Telco dataset · built by Juan Parrado</span>',
+    unsafe_allow_html=True,
+)
+st.markdown(
+    f'<div class="hero-title"><span>{n_risk} customers</span> are about to cancel.<br>Here is who to call first.</div>',
+    unsafe_allow_html=True,
+)
+st.markdown(
+    f'<p class="lede">A machine-learning model scored {len(predicted):,} telecom customers on how likely they are to leave. '
+    f'Everyone above {RISK_THRESHOLD:.0%} risk gets an AI-written retention plan below.</p>',
+    unsafe_allow_html=True,
 )
 
+kpis = [
+    (f"{n_risk}", f"customers above {RISK_THRESHOLD:.0%} risk of cancelling"),
+    (f"${revenue_at_risk:,.0f}" if revenue_at_risk is not None else "n/a", "monthly revenue at risk from them"),
+    (f"{flagged_really_left:.0%}", "of the customers the model flagged really did cancel"),
+    (f"~{best_acc:.0%}", f"overall accuracy on {len(predicted):,} test customers"),
+]
+for col, (v, l) in zip(st.columns(4), kpis):
+    col.markdown(f'<div class="kpi"><div class="v">{v}</div><div class="l">{l}</div></div>', unsafe_allow_html=True)
+
+reason_counts = risk["Reason"].value_counts()
+top_reason = reason_counts.index[0]
+plain = (
+    f"The riskiest customers look alike: "
+    + (f"all {n_risk} are on month-to-month contracts, " if "Contract" in risk and (risk["Contract"] == "Month-to-month").all() else "")
+    + (f"most joined only {risk['tenure'].median():.0f} months ago, and they pay ${risk['MonthlyCharges'].mean():.0f} a month on average. " if "tenure" in risk else "")
+    + "Offering a discounted 12-month contract in the first months is where retention money works hardest."
+)
+st.markdown(f'<div class="plain"><span class="k">In plain words</span>{plain}</div>', unsafe_allow_html=True)
+
 # =============================== #
-#  SIDEBAR – CHOOSE COLUMNS TO DISPLAY
+#  CHARTS
 # =============================== #
-with st.sidebar:
-    show_cols = st.multiselect(
-        "Columns to display (optional)",
-        df.columns.tolist(),
-        default=df.columns.tolist()
+alt.data_transformers.disable_max_rows()
+axis = dict(labelColor=MUTED, titleColor=MUTED, gridColor="#EEF0F5", domainColor="#E3E6EF", labelFont="Figtree", titleFont="Figtree")
+
+c1, c2 = st.columns([1, 1.15], gap="large")
+with c1:
+    st.subheader("Why they are at risk")
+    st.caption("Main reason the AI gave for each high-risk customer")
+    rc = reason_counts.reset_index()
+    rc.columns = ["Reason", "Customers"]
+    rc["Top"] = rc["Reason"] == top_reason
+    bars = (
+        alt.Chart(rc)
+        .mark_bar(cornerRadiusEnd=4, height=22)
+        .encode(
+            y=alt.Y("Reason:N", sort="-x", title=None, axis=alt.Axis(labelLimit=220)),
+            x=alt.X("Customers:Q", title="Customers"),
+            color=alt.condition("datum.Top", alt.value(ACCENT), alt.value(NEUTRAL)),
+            tooltip=["Reason", "Customers"],
+        )
     )
+    labels = bars.mark_text(align="left", dx=6, color=INK, font="Figtree", fontWeight=600).encode(text="Customers:Q", color=alt.value(INK))
+    st.altair_chart((bars + labels).properties(height=260).configure_axis(**axis).configure_view(stroke=None), width="stretch")
+
+with c2:
+    st.subheader("How risk is spread across all customers")
+    st.caption(f"Each bar is a group of customers by churn probability (XGBoost). Blue bars are above the {RISK_THRESHOLD:.0%} line.")
+    hist = predicted[["xgboost_proba"]].copy()
+    hist["bin"] = (hist["xgboost_proba"] * 20).clip(upper=19.999).astype(int) / 20
+    hist = hist.groupby("bin").size().reset_index(name="Customers")
+    hist["High risk"] = hist["bin"] >= RISK_THRESHOLD
+    hist["Range"] = hist["bin"].map(lambda b: f"{b:.0%}–{b + 0.05:.0%}")
+    order = hist["Range"].tolist()
+    h = (
+        alt.Chart(hist)
+        .mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
+        .encode(
+            x=alt.X("Range:N", sort=order, title="Probability of cancelling", axis=alt.Axis(labelAngle=-45, labelExpr="split(datum.label, '–')[0]")),
+            y=alt.Y("Customers:Q", title="Customers"),
+            color=alt.condition("datum['High risk']", alt.value(ACCENT), alt.value(NEUTRAL)),
+            tooltip=[alt.Tooltip("Range:N", title="Probability"), "Customers:Q"],
+        )
+    )
+    rule = alt.Chart(pd.DataFrame({"Range": [f"{RISK_THRESHOLD:.0%}–{RISK_THRESHOLD + 0.05:.0%}"], "t": [f"{RISK_THRESHOLD:.0%} line"]})).mark_text(
+        align="left", dx=-6, dy=-8, color=INK, font="Figtree", fontWeight=600).encode(x=alt.X("Range:N", sort=order), y=alt.value(12), text="t:N")
+    st.altair_chart((h + rule).properties(height=260).configure_axis(**axis).configure_view(stroke=None), width="stretch")
 
 # =============================== #
-#  DISPLAY DATAFRAME
+#  CUSTOMERS TO CALL FIRST
 # =============================== #
-if sheet_name == "risk_customers":
-    # Show the full filtered table for risk_customers
-    st.subheader("Data Preview (full table)")
-    st.dataframe(filtered, use_container_width=True)
-else:
-    # Keep the original behavior for predicted
-    st.subheader("Data Preview")
-    st.dataframe(filtered[show_cols], use_container_width=True)
+st.subheader("Customers to call first")
+f1, f2 = st.columns([2, 1])
+with f1:
+    reasons = ["All reasons"] + reason_counts.index.tolist()
+    chosen = st.segmented_control("Filter by main reason", reasons, default="All reasons", label_visibility="collapsed") or "All reasons"
+with f2:
+    show_n = st.selectbox("Show", [6, 12, 24, n_risk], format_func=lambda n: "All" if n == n_risk else f"Top {n}", label_visibility="collapsed")
 
-# =============================== #
-#  DOWNLOAD FILTERED DATA
-# =============================== #
-# For simplicity, still use show_cols for the download (all columns by default)
-csv_out = filtered[show_cols].to_csv(index=False).encode("utf-8")
+view = risk if chosen == "All reasons" else risk[risk["Reason"] == chosen]
+view = view.sort_values("Churn_Probability", ascending=False).head(show_n)
+
+cols = st.columns(2, gap="medium")
+for i, (_, r) in enumerate(view.iterrows()):
+    meta = []
+    if "MonthlyCharges" in r and pd.notna(r["MonthlyCharges"]):
+        meta.append(f"${r['MonthlyCharges']:.0f}/month")
+    if "tenure" in r and pd.notna(r["tenure"]):
+        m = int(r["tenure"])
+        meta.append(f"{m} month{'s' if m != 1 else ''} as a customer")
+    with cols[i % 2].container(border=True):
+        st.markdown(
+            f'<div class="card-top"><span class="p">{r["Churn_Probability"]:.0%}</span>'
+            f'<span class="id">Customer #{int(r["CustomerIndex"])}</span><span class="meta">{" · ".join(meta)}</span></div>'
+            f'<span class="tag">{r["Reason"]}</span>'
+            f'<div class="why"><b>Why</b>{r["Causes"]}</div>'
+            f'<div class="act"><b>Suggested action (AI)</b>{r["Recommendation"]}</div>',
+            unsafe_allow_html=True,
+        )
+
 st.download_button(
-    "⬇️ Download filtered CSV",
-    data=csv_out,
-    file_name=f"{sheet_name}_filtered.csv",
-    mime="text/csv"
+    "⬇️ Download the call list (CSV)",
+    data=risk.sort_values("Churn_Probability", ascending=False).to_csv(index=False).encode("utf-8"),
+    file_name="high_risk_customers.csv",
+    mime="text/csv",
 )
 
 # =============================== #
-#  CHARTS SECTION
+#  MODEL COMPARISON
 # =============================== #
+st.subheader("How the three models compare")
+st.caption("Tested on customers the models never saw during training.")
+ms = pd.DataFrame(model_scores).T
+st.dataframe(ms.style.format("{:.0%}"), width="stretch")
 
-if sheet_name == "predicted":
-    # ------------------------------------------- #
-    # ORIGINAL INTERACTIVE CHART FOR 'predicted'
-    # ------------------------------------------- #
-    st.subheader("Interactive Chart")
+# =============================== #
+#  ADVANCED: RAW DATA EXPLORER (original tool, kept for analysts)
+# =============================== #
+with st.expander("Explore the raw data (for analysts)"):
+    gsheets_url = st.text_input("Google Sheets URL", value=DEFAULT_GSHEETS_URL,
+                                help="The sheet must be shared as 'Anyone with the link – Viewer'.")
+    sheet_name = st.selectbox("Sheet/tab", ["predicted", "risk_customers"], index=0)
+    try:
+        df = load_data_from_gsheets(gsheets_url, sheet_name)
+    except Exception as e:
+        st.error(f"Error loading data from Google Sheets: {e}")
+        st.stop()
 
-    if not filtered.empty:
-
-        # Identify numeric and non-numeric columns
-        num_cols = [c for c in filtered.columns if pd.api.types.is_numeric_dtype(filtered[c])]
-        cat_cols = [c for c in filtered.columns if not pd.api.types.is_numeric_dtype(filtered[c])]
-
-        # Chart configuration controls
-        col1, col2, col3, col4 = st.columns(4)
-
-        with col1:
-            chart_type = st.selectbox("Chart Type", ["Bar", "Line", "Scatter"])
-        with col2:
-            x_col = st.selectbox("X Axis (category/date)", cat_cols or filtered.columns.tolist())
-        with col3:
-            y_col = st.selectbox("Y Axis (numeric)", num_cols or filtered.columns.tolist())
-        with col4:
-            agg = st.selectbox("Aggregation", ["sum", "mean", "count", "min", "max"], index=0)
-
-        # Prepare dataframe for plotting
-        plot_df = filtered.copy()
-
-        # For Bar and Line charts, aggregate by X
-        if chart_type in ["Bar", "Line"] and len(plot_df):
-
-            if agg == "count":
-                plot_df = (
-                    plot_df.groupby(x_col, dropna=False)[y_col]
-                    .count()
-                    .reset_index(name=y_col)
-                )
-            else:
-                plot_df = getattr(
-                    plot_df.groupby(x_col, dropna=False)[y_col],
-                    agg
-                )().reset_index()
-
-        # Altair configuration
-        alt.data_transformers.disable_max_rows()
-
-        # Bar chart
-        if chart_type == "Bar":
-            chart = (
-                alt.Chart(plot_df)
-                .mark_bar()
-                .encode(
-                    x=alt.X(x_col, sort="-y"),
-                    y=alt.Y(y_col),
-                    tooltip=[x_col, y_col]
-                )
-                .interactive()
-            )
-
-        # Line chart
-        elif chart_type == "Line":
-            chart = (
-                alt.Chart(plot_df)
-                .mark_line(point=True)
-                .encode(
-                    x=alt.X(x_col),
-                    y=alt.Y(y_col),
-                    tooltip=[x_col, y_col]
-                )
-                .interactive()
-            )
-
-        # Scatter chart – uses non-aggregated filtered data
+    cols_to_filter = st.multiselect("Columns to filter", df.columns.tolist())
+    filtered = df.copy()
+    for col in cols_to_filter:
+        series = df[col]
+        if pd.api.types.is_numeric_dtype(series):
+            lo, hi = st.slider(f"{col} (range)", float(series.min()), float(series.max()), (float(series.min()), float(series.max())))
+            filtered = filtered[(filtered[col] >= lo) & (filtered[col] <= hi)]
         else:
-            chart = (
-                alt.Chart(filtered)
-                .mark_circle(size=60)
-                .encode(
-                    x=alt.X(x_col),
-                    y=alt.Y(y_col),
-                    tooltip=list(filtered.columns)
-                )
-                .interactive()
-            )
+            uniq = sorted(series.dropna().astype(str).unique().tolist())[:500]
+            sel = st.multiselect(col, uniq)
+            if sel:
+                filtered = filtered[filtered[col].astype(str).isin(sel)]
 
-        st.altair_chart(chart, use_container_width=True)
-
-    else:
-        st.info("No data available to plot.")
-
-else:
-    # ------------------------------------------- #
-    # SPECIAL CHART FOR 'risk_customers'
-    # ------------------------------------------- #
-    st.subheader("Risk Customers Charts")
-
-    if filtered.empty:
-        st.info("No data available to plot for 'risk_customers'.")
-    else:
-        # We only need CustomerIndex for the count chart
-        required_cols = ["CustomerIndex"]
-
-        missing = [c for c in required_cols if c not in filtered.columns]
-        if missing:
-            st.warning(
-                "The 'risk_customers' sheet needs the following column to build the chart: "
-                + ", ".join(missing)
-            )
-        else:
-            # X-axis options: all columns except CustomerIndex and Churn_Probability
-            excluded = ["CustomerIndex", "Churn_Probability"]
-            available_x_cols = [c for c in filtered.columns if c not in excluded]
-
-            if not available_x_cols:
-                st.warning(
-                    "There are no available columns to use as X axis "
-                    "once 'CustomerIndex' and 'Churn_Probability' are excluded."
-                )
-            else:
-                x_axis_col = st.selectbox(
-                    "Select X-axis column",
-                    available_x_cols
-                )
-
-                # Group data by the chosen X dimension and count CustomerIndex
-                grouped = (
-                    filtered
-                    .groupby(x_axis_col, dropna=False)["CustomerIndex"]
-                    .count()
-                    .reset_index(name="CustomerIndex_count")
-                )
-
-                alt.data_transformers.disable_max_rows()
-
-                st.markdown("### Count of CustomerIndex by selected X")
-
-                chart_count = (
-                    alt.Chart(grouped)
-                    .mark_bar()
-                    .encode(
-                        x=alt.X(x_axis_col, sort="-y", title=x_axis_col),
-                        y=alt.Y("CustomerIndex_count:Q", title="CustomerIndex count"),
-                        tooltip=[x_axis_col, "CustomerIndex_count:Q"]
-                    )
-                    .interactive()
-                )
-
-                st.altair_chart(chart_count, use_container_width=True)
+    st.caption(f"Rows after filters: {len(filtered):,} / {len(df):,}")
+    st.dataframe(filtered, width="stretch")
+    st.download_button("⬇️ Download filtered CSV", data=filtered.to_csv(index=False).encode("utf-8"),
+                       file_name=f"{sheet_name}_filtered.csv", mime="text/csv")
