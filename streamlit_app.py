@@ -7,45 +7,57 @@ import altair as alt
 #  PAGE CONFIGURATION
 # =============================== #
 st.set_page_config(
-    page_title="Churn Early-Warning · Juan Parrado",
-    page_icon="📉",
+    page_title="Telco Retention Desk · Juan Parrado",
+    page_icon="📶",
     layout="wide",
 )
 
-ACCENT = "#3A50FC"
-ACCENT_SOFT = "#E8EBFF"
-INK = "#0F1117"
-MUTED = "#5A6072"
-NEUTRAL = "#C9CFE0"
+# "Telco · Retention desk" identity: deep plum, signal magenta, warm paper (IBM Plex nods to the IBM Telco dataset)
+ACCENT = "#E4007C"
+ACCENT_SOFT = "#FCE3EF"
+INK = "#23062E"
+MUTED = "#6E5A69"
+NEUTRAL = "#E6D6DF"
 RISK_THRESHOLD = 0.70
 
-# Brand styling (matches juanparrado.com)
+LOGO = (
+    '<svg width="26" height="22" viewBox="0 0 26 22" aria-hidden="true">'
+    '<rect x="0" y="14" width="4" height="8" rx="1.5" fill="#FCE3EF"/><rect x="7" y="9" width="4" height="13" rx="1.5" fill="#FCE3EF"/>'
+    '<rect x="14" y="4" width="4" height="18" rx="1.5" fill="#E4007C"/><rect x="21" y="0" width="4" height="22" rx="1.5" fill="#E4007C" opacity=".35"/></svg>'
+)
+
 st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600&display=swap');
-    html, body, [class*="css"], .stMarkdown, p, li, label, .stTextInput, .stSelectbox { font-family: 'Figtree', sans-serif; }
-    h1, h2, h3, .hero-title { font-family: 'Bricolage Grotesque', sans-serif !important; letter-spacing: -0.02em; }
-    .block-container { padding-top: 2rem; max-width: 1240px; }
-    .strip { font-size: 13px; color: #5A6072; background: #F4F5F9; border-radius: 999px; padding: 6px 14px; display: inline-block; margin-bottom: 18px; }
-    .strip b { color: #0F1117; }
-    .hero-title { font-size: clamp(32px, 4.2vw, 52px) !important; font-weight: 700; line-height: 1.05 !important; color: #0F1117; margin: 0 0 14px; }
-    .hero-title span { color: #3A50FC; }
-    .lede { font-size: 18px; color: #5A6072; max-width: 62ch; margin-bottom: 26px; }
-    .kpi { background: #F4F5F9; border-radius: 20px; padding: 20px 22px; height: 100%; }
-    .kpi .v { font-family: 'Bricolage Grotesque', sans-serif; font-size: 40px; font-weight: 700; color: #2438D6; line-height: 1; letter-spacing: -0.03em; }
-    .kpi .l { font-size: 14px; color: #5A6072; margin-top: 8px; line-height: 1.4; }
-    .plain, .plain * { font-family: 'Figtree', sans-serif !important; }
-    .plain { border-left: 3px solid #3A50FC; padding: 4px 0 4px 16px; margin: 26px 0 8px; font-size: 17px; color: #0F1117; max-width: 80ch; }
-    .plain .k { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #2438D6; display: block; margin-bottom: 4px; }
+    @import url('https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap');
+    html, body, [class*="css"], .stMarkdown, p, li, label, .stTextInput, .stSelectbox, button { font-family: 'IBM Plex Sans', sans-serif; }
+    h1, h2, h3, .hero-title { font-family: 'Familjen Grotesk', sans-serif !important; letter-spacing: -0.02em; color: #23062E; }
+    .stApp { background: #FBF6F2; }
+    .block-container { padding-top: 1.2rem; max-width: 1240px; }
+    .hero { background: radial-gradient(70% 120% at 100% 0%, rgba(228,0,124,.35), transparent 60%), #23062E; color: #fff; border-radius: 26px; padding: 26px 34px 30px; margin-bottom: 18px; }
+    .brandbar { display: flex; align-items: center; gap: 10px; font-family: 'IBM Plex Mono', monospace; font-size: 13px; letter-spacing: .04em; color: #FCE3EF; margin-bottom: 18px; }
+    .brandbar b { color: #fff; font-weight: 500; }
+    .brandbar .src { margin-left: auto; color: #C9AFC0; font-size: 12px; }
+    .hero-title { font-size: clamp(32px, 4.2vw, 54px) !important; font-weight: 700; line-height: 1.02 !important; color: #fff !important; margin: 0 0 12px; }
+    .hero-title span { color: #FF4FA7; }
+    .lede { font-size: 17px; color: #E9D9E3; max-width: 64ch; margin: 0; }
+    .kpi { background: #fff; border: 1px solid #EFDDE7; border-radius: 18px; padding: 18px 20px; height: 100%; box-shadow: 0 1px 0 rgba(35,6,46,.04); }
+    .kpi .v { font-family: 'Familjen Grotesk', sans-serif; font-size: 40px; font-weight: 700; color: #23062E; line-height: 1; letter-spacing: -0.03em; }
+    .kpi.hot { background: #E4007C; border-color: #E4007C; }
+    .kpi.hot .v, .kpi.hot .l { color: #fff; }
+    .kpi .l { font-size: 14px; color: #6E5A69; margin-top: 8px; line-height: 1.4; }
+    .plain { background: #FCE3EF; border-radius: 16px; padding: 14px 18px; margin: 20px 0 8px; font-size: 16.5px; color: #23062E; max-width: 90ch; }
+    .plain, .plain * { font-family: 'IBM Plex Sans', sans-serif !important; }
+    .plain .k { font-family: 'IBM Plex Mono', monospace !important; font-size: 12px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: #B8005F; display: block; margin-bottom: 4px; }
     .card-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
-    .card-top .p { font-family: 'Bricolage Grotesque', sans-serif; font-size: 28px; font-weight: 700; color: #2438D6; }
-    .card-top .id { font-weight: 600; color: #0F1117; }
-    .card-top .meta { color: #5A6072; font-size: 14px; }
-    .tag { display: inline-block; font-size: 12px; font-weight: 600; background: #E8EBFF; color: #2438D6; border-radius: 999px; padding: 3px 10px; }
+    .card-top .p { font-family: 'Familjen Grotesk', sans-serif; font-size: 30px; font-weight: 700; color: #E4007C; }
+    .card-top .id { font-family: 'IBM Plex Mono', monospace; font-weight: 500; color: #23062E; }
+    .card-top .meta { color: #6E5A69; font-size: 14px; }
+    .tag { display: inline-block; font-size: 12px; font-weight: 600; background: #23062E; color: #FCE3EF; border-radius: 6px; padding: 3px 9px; }
     .why, .act { font-size: 15px; margin-top: 8px; }
-    .why b, .act b { font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: #5A6072; display: block; }
-    .act { background: #F4F5F9; border-radius: 12px; padding: 10px 12px; }
+    .why b, .act b { font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; font-weight: 500; letter-spacing: .05em; text-transform: uppercase; color: #6E5A69; display: block; }
+    .act { background: #FBF6F2; border-left: 3px solid #E4007C; border-radius: 0 10px 10px 0; padding: 9px 12px; }
+    [data-testid="stVerticalBlockBorderWrapper"] { background: #fff; border-color: #EFDDE7 !important; border-radius: 18px !important; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -142,16 +154,11 @@ revenue_at_risk = risk["MonthlyCharges"].sum() if "MonthlyCharges" in risk else 
 #  HERO
 # =============================== #
 st.markdown(
-    '<span class="strip"><b>Portfolio project</b> · public IBM Telco dataset · built by Juan Parrado</span>',
-    unsafe_allow_html=True,
-)
-st.markdown(
-    f'<div class="hero-title"><span>{n_risk} customers</span> are about to cancel.<br>Here is who to call first.</div>',
-    unsafe_allow_html=True,
-)
-st.markdown(
-    f'<p class="lede">A machine-learning model scored {len(predicted):,} telecom customers on how likely they are to leave. '
-    f'Everyone above {RISK_THRESHOLD:.0%} risk gets an AI-written retention plan below.</p>',
+    f'<div class="hero"><div class="brandbar">{LOGO}<b>Telco</b>· Retention desk'
+    '<span class="src">Portfolio project · public IBM Telco dataset · built by Juan Parrado</span></div>'
+    f'<div class="hero-title"><span>{n_risk} customers</span> are about to cancel.<br>Here is who to call first.</div>'
+    f'<p class="lede">A machine-learning model scored {len(predicted):,} subscribers on how likely they are to leave. '
+    f'Everyone above {RISK_THRESHOLD:.0%} risk gets an AI-written retention plan below.</p></div>',
     unsafe_allow_html=True,
 )
 
@@ -161,8 +168,8 @@ kpis = [
     (f"{flagged_really_left:.0%}", "of the customers the model flagged really did cancel"),
     (f"~{best_acc:.0%}", f"overall accuracy on {len(predicted):,} test customers"),
 ]
-for col, (v, l) in zip(st.columns(4), kpis):
-    col.markdown(f'<div class="kpi"><div class="v">{v}</div><div class="l">{l}</div></div>', unsafe_allow_html=True)
+for i, (col, (v, l)) in enumerate(zip(st.columns(4), kpis)):
+    col.markdown(f'<div class="kpi{" hot" if i == 1 else ""}"><div class="v">{v}</div><div class="l">{l}</div></div>', unsafe_allow_html=True)
 
 reason_counts = risk["Reason"].value_counts()
 top_reason = reason_counts.index[0]
@@ -178,7 +185,7 @@ st.markdown(f'<div class="plain"><span class="k">In plain words</span>{plain}</d
 #  CHARTS
 # =============================== #
 alt.data_transformers.disable_max_rows()
-axis = dict(labelColor=MUTED, titleColor=MUTED, gridColor="#EEF0F5", domainColor="#E3E6EF", labelFont="Figtree", titleFont="Figtree")
+axis = dict(labelColor=MUTED, titleColor=MUTED, gridColor="#F1E6EC", domainColor="#E6D6DF", labelFont="IBM Plex Sans", titleFont="IBM Plex Sans")
 
 c1, c2 = st.columns([1, 1.15], gap="large")
 with c1:
@@ -197,12 +204,12 @@ with c1:
             tooltip=["Reason", "Customers"],
         )
     )
-    labels = bars.mark_text(align="left", dx=6, color=INK, font="Figtree", fontWeight=600).encode(text="Customers:Q", color=alt.value(INK))
+    labels = bars.mark_text(align="left", dx=6, color=INK, font="IBM Plex Sans", fontWeight=600).encode(text="Customers:Q", color=alt.value(INK))
     st.altair_chart((bars + labels).properties(height=260).configure_axis(**axis).configure_view(stroke=None), width="stretch")
 
 with c2:
     st.subheader("How risk is spread across all customers")
-    st.caption(f"Each bar is a group of customers by churn probability (XGBoost). Blue bars are above the {RISK_THRESHOLD:.0%} line.")
+    st.caption(f"Each bar is a group of customers by churn probability (XGBoost). Magenta bars are above the {RISK_THRESHOLD:.0%} line.")
     hist = predicted[["xgboost_proba"]].copy()
     hist["bin"] = (hist["xgboost_proba"] * 20).clip(upper=19.999).astype(int) / 20
     hist = hist.groupby("bin").size().reset_index(name="Customers")
@@ -220,7 +227,7 @@ with c2:
         )
     )
     rule = alt.Chart(pd.DataFrame({"Range": [f"{RISK_THRESHOLD:.0%}–{RISK_THRESHOLD + 0.05:.0%}"], "t": [f"{RISK_THRESHOLD:.0%} line"]})).mark_text(
-        align="left", dx=-6, dy=-8, color=INK, font="Figtree", fontWeight=600).encode(x=alt.X("Range:N", sort=order), y=alt.value(12), text="t:N")
+        align="left", dx=-6, dy=-8, color=INK, font="IBM Plex Sans", fontWeight=600).encode(x=alt.X("Range:N", sort=order), y=alt.value(12), text="t:N")
     st.altair_chart((h + rule).properties(height=260).configure_axis(**axis).configure_view(stroke=None), width="stretch")
 
 # =============================== #
