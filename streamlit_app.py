@@ -132,20 +132,30 @@ if telco is not None:
     )
 
 # Model quality on the test customers
+def auc(y: pd.Series, score: pd.Series) -> float:
+    """ROC-AUC: chance the model ranks a real leaver above a customer who stayed."""
+    r = score.rank()
+    pos = int((y == 1).sum()); neg = len(y) - pos
+    return (r[y == 1].sum() - pos * (pos + 1) / 2) / (pos * neg) if pos and neg else 0
+
+
 def scores(pred_col: str) -> dict:
     y, yh = predicted["churn_actual"], predicted[pred_col]
+    proba = pd.to_numeric(predicted[pred_col.replace("_pred", "_proba")].astype(str).str.replace(",", "."), errors="coerce")
     tp = int(((y == 1) & (yh == 1)).sum())
     fp = int(((y == 0) & (yh == 1)).sum())
     fn = int(((y == 1) & (yh == 0)).sum())
     return {
-        "Accuracy": (y == yh).mean(),
-        "Precision (flagged who really left)": tp / (tp + fp) if tp + fp else 0,
         "Recall (leavers the model caught)": tp / (tp + fn) if tp + fn else 0,
+        "Precision (flagged who really left)": tp / (tp + fp) if tp + fp else 0,
+        "ROC-AUC": auc(y, proba),
+        "Accuracy": (y == yh).mean(),
     }
 
 models = {"Logistic Regression": "logistic_pred", "Random Forest": "random_forest_pred", "XGBoost": "xgboost_pred"}
 model_scores = {name: scores(col) for name, col in models.items()}
-best_acc = max(s["Accuracy"] for s in model_scores.values())
+best = max(model_scores, key=lambda m: model_scores[m]["ROC-AUC"])
+baseline_acc = 1 - predicted["churn_actual"].mean()  # accuracy of always guessing "nobody leaves"
 flagged_really_left = predicted.set_index("customerID").reindex(risk["CustomerIndex"])["churn_actual"].mean()
 n_risk = len(risk)
 revenue_at_risk = risk["MonthlyCharges"].sum() if "MonthlyCharges" in risk else None
@@ -166,7 +176,7 @@ kpis = [
     (f"{n_risk}", f"customers above {RISK_THRESHOLD:.0%} risk of cancelling"),
     (f"${revenue_at_risk:,.0f}" if revenue_at_risk is not None else "n/a", "monthly revenue at risk from them"),
     (f"{flagged_really_left:.0%}", "of the customers the model flagged really did cancel"),
-    (f"~{best_acc:.0%}", f"overall accuracy on {len(predicted):,} test customers"),
+    (f"{model_scores[best]['ROC-AUC']:.2f}", "ROC-AUC score (1.0 = perfect, 0.5 = a coin flip)"),
 ]
 for i, (col, (v, l)) in enumerate(zip(st.columns(4), kpis)):
     col.markdown(f'<div class="kpi{" hot" if i == 1 else ""}"><div class="v">{v}</div><div class="l">{l}</div></div>', unsafe_allow_html=True)
@@ -273,9 +283,13 @@ st.download_button(
 #  MODEL COMPARISON
 # =============================== #
 st.subheader("How the three models compare")
-st.caption("Tested on customers the models never saw during training.")
+st.caption(
+    f"Tested on {len(predicted):,} customers the models never saw during training. "
+    f"Accuracy alone is misleading here: guessing \"nobody leaves\" is already {baseline_acc:.0%} accurate, "
+    "so recall, precision and ROC-AUC are the numbers that matter."
+)
 ms = pd.DataFrame(model_scores).T
-st.dataframe(ms.style.format("{:.0%}"), width="stretch")
+st.dataframe(ms.style.format({c: "{:.0%}" for c in ms.columns if c != "ROC-AUC"} | {"ROC-AUC": "{:.2f}"}), width="stretch")
 
 # =============================== #
 #  ADVANCED: RAW DATA EXPLORER (original tool, kept for analysts)
